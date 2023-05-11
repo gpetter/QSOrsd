@@ -1,196 +1,143 @@
+from corrfunc_helper import twoPointCFs, plots
+from astropy.table import Table
 import numpy as np
-# edited code from Corrfunc to allow Peebles estimator of correlation function
+import pickle
+eboss_zs = [1.1, 1.4, 1.7, 2.]
+boss_zs = [2.5, 3.0]
 
+datadir = '/home/graysonpetter/ssd/Dartmouth/data/lss/'
+plotdir = '/home/graysonpetter/Dropbox/rsdplots/'
 
-# convert either angular or spatial counts to correlation function
-# implemented custom Peebles estimator, as only Landy-Szalay built into Corrfunc
-def convert_counts_to_cf(ND1, ND2, NR1, NR2,
-							D1D2, D1R2, D2R1, R1R2,
-							estimator='Peebles'):
-
-	pair_counts = dict()
-
-	if 'LS' in estimator or 'Landy' in estimator:
-
-		fields = ['D1D2', 'D1R2', 'D2R1', 'R1R2']
-		arrays = [D1D2, D1R2, D2R1, R1R2]
-		for (field, array) in zip(fields, arrays):
-			try:
-
-				if np.max(array['weightavg']) > 0:
-					npairs = array['npairs'] * array['weightavg']
-
-				else:
-					npairs = array['npairs']
-				pair_counts[field] = npairs
-
-			except IndexError:
-				pair_counts[field] = array
-
-		nbins = len(pair_counts['D1D2'])
-		if (nbins != len(pair_counts['D1R2'])) or \
-				(nbins != len(pair_counts['D2R1'])) or \
-				(nbins != len(pair_counts['R1R2'])):
-			msg = 'Pair counts must have the same number of elements (same bins)'
-			raise ValueError(msg)
-
-		nonzero = pair_counts['R1R2'] > 0
-
-		fN1 = float(NR1) / float(ND1)
-		fN2 = float(NR2) / float(ND2)
-		cf = np.zeros(nbins)
-		cf[:] = np.nan
-		cf[nonzero] = (fN1 * fN2 * pair_counts['D1D2'][nonzero] -
-						fN1 * pair_counts['D1R2'][nonzero] -
-						fN2 * pair_counts['D2R1'][nonzero] +
-						pair_counts['R1R2'][nonzero]) / pair_counts['R1R2'][nonzero]
-		if len(cf) != nbins:
-			msg = 'Bug in code. Calculated correlation function does not '\
-					'have the same number of bins as input arrays. Input bins '\
-					'={0} bins in (wrong) calculated correlation = {1}'.format(nbins, len(cf))
-			raise RuntimeError(msg)
-	elif estimator == 'Peebles':
-
-		fields = ['D1D2', 'D2R1']
-		arrays = [D1D2, D2R1]
-		for (field, array) in zip(fields, arrays):
-			try:
-
-				if np.max(array['weightavg']) > 0:
-					npairs = array['npairs'] * array['weightavg']
-
-				else:
-					npairs = array['npairs']
-				pair_counts[field] = npairs
-
-			except IndexError:
-				pair_counts[field] = array
-
-		nbins = len(pair_counts['D1D2'])
-		if nbins != len(pair_counts['D2R1']):
-			msg = 'Pair counts must have the same number of elements (same bins)'
-			raise ValueError(msg)
-
-		nonzero = pair_counts['D2R1'] > 0
-		fN1 = float(NR1) / float(ND1)
-
-		cf = np.zeros(nbins)
-		cf[:] = np.nan
-		cf[nonzero] = (fN1 * pair_counts['D1D2'][nonzero]) / pair_counts['D2R1'][nonzero] - 1
-	else:
-		return
-
-	return cf
+lopercentile, hipercentile = 10, 90
 
 
 
+def rolling_percentile_selection(cat, prop, minpercentile, maxpercentile=100, nzbins=100):
+    """
+    choose highest nth percentile of e.g. luminosity in bins of redshift
+    """
+    minz, maxz = np.min(cat['Z']), np.max(cat['Z'])
+    zbins = np.linspace(minz, maxz, nzbins)
+    idxs = []
+    for j in range(len(zbins)-1):
+        catinbin = cat[np.where((cat['Z'] > zbins[j]) & (cat['Z'] <= zbins[j+1]))]
+        thresh = np.percentile(catinbin[prop], minpercentile)
+        hithresh = np.percentile(catinbin[prop], maxpercentile)
+        idxs += list(np.where((cat[prop] > thresh) & (cat[prop] <= hithresh) &
+                              (cat['Z'] > zbins[j]) & (cat['Z'] <= zbins[j+1]))[0])
+
+    newcat = cat[np.array(idxs)]
+    return newcat
+
+def auto_all_eboss(rpscales, pimax, pibinsize, mbh_xcorr=False, lum_xcorr=False):
+    qso = Table.read(datadir + 'eBOSS_QSO/eBOSS_QSO.fits')
+    rand = Table.read(datadir + 'eBOSS_QSO/eBOSS_QSO_randoms.fits')
+
+    cf = twoPointCFs.autocorr_cat(rpscales, qso, rand,
+                                  nthreads=16, estimator='LS', pimax=pimax, dpi=pibinsize, nbootstrap=500)
+    with open('results/cfs/ebossqso_cf.pickle', 'wb') as f:
+        pickle.dump(cf, f)
+    fig = cf['2dplot']
+    fig.savefig(plotdir + 'all.pdf')
+
+    if mbh_xcorr:
+        highbh = rolling_percentile_selection(qso, 'MBH', minpercentile=hipercentile, nzbins=30)
+        lobh = rolling_percentile_selection(qso, 'MBH', minpercentile=0, maxpercentile=lopercentile, nzbins=30)
+        hicf = twoPointCFs.crosscorr_cats(rpscales, qso, highbh, rand,
+                                          nthreads=16, estimator='Peebles',
+                                          pimax=pimax, dpi=pibinsize, nbootstrap=500)
+        locf = twoPointCFs.crosscorr_cats(rpscales, qso, lobh, rand,
+                                          nthreads=16, estimator='Peebles',
+                                          pimax=pimax, dpi=pibinsize, nbootstrap=500)
+        with open('results/cfs/ebossqso_highbh.pickle', 'wb') as f:
+            pickle.dump(hicf, f)
+        with open('results/cfs/ebossqso_lobh.pickle', 'wb') as f:
+            pickle.dump(locf, f)
+        fig = plots.plotmultiple_2d_corr_func([cf['xi_rp_pi'], hicf['xi_rp_pi']])
+        fig.savefig(plotdir + 'all_hibhmass.pdf')
+        fig = plots.plotmultiple_2d_corr_func([cf['xi_rp_pi'], locf['xi_rp_pi']])
+        fig.savefig(plotdir + 'all_lobhmass.pdf')
+    if lum_xcorr:
+        highlum = rolling_percentile_selection(qso, 'Lbol', minpercentile=hipercentile, nzbins=30)
+        lolum = rolling_percentile_selection(qso, 'Lbol', minpercentile=0, maxpercentile=lopercentile, nzbins=30)
+        hilumcf = twoPointCFs.crosscorr_cats(rpscales, qso, highlum, rand,
+                                          nthreads=16, estimator='Peebles',
+                                          pimax=pimax, dpi=pibinsize, nbootstrap=500)
+        lolumcf = twoPointCFs.crosscorr_cats(rpscales, qso, lolum, rand,
+                                          nthreads=16, estimator='Peebles',
+                                          pimax=pimax, dpi=pibinsize, nbootstrap=500)
+        with open('results/cfs/ebossqso_highbh.pickle', 'wb') as f:
+            pickle.dump(hilumcf, f)
+        with open('results/cfs/ebossqso_lobh.pickle', 'wb') as f:
+            pickle.dump(lolumcf, f)
+        fig = plots.plotmultiple_2d_corr_func([cf['xi_rp_pi'], hilumcf['xi_rp_pi']])
+        fig.savefig(plotdir + 'all_hilum.pdf')
+        fig = plots.plotmultiple_2d_corr_func([cf['xi_rp_pi'], lolumcf['xi_rp_pi']])
+        fig.savefig(plotdir + 'all_lolum.pdf')
+
+#auto_all_eboss(np.logspace(0., 1.5, 11), pimax=30, pibinsize=3, mbh_xcorr=True, lum_xcorr=True)
+
+def auto_all_boss(rpscales, pimax, pibinsize):
+    qso = Table.read(datadir + 'BOSS_QSO/BOSS_QSO.fits')
+    rand = Table.read(datadir + 'BOSS_QSO/BOSS_QSO_randoms.fits')
+
+    cf = twoPointCFs.autocorr_cat(rpscales, qso, rand,
+                                  nthreads=16, estimator='LS', pimax=pimax, dpi=pibinsize, nbootstrap=500)
+
+def auto_eboss_z_evolution(rpscales, pimax, pibinsize):
+    qso = Table.read(datadir + 'eBOSS_QSO/eBOSS_QSO.fits')
+    rand = Table.read(datadir + 'eBOSS_QSO/eBOSS_QSO_randoms.fits')
+
+    for z in eboss_zs:
+        qsoz = qso[np.where((qso['Z'] > (z - 0.15)) & (qso['Z'] < (z + 0.15)))]
+        randz = rand[np.where((rand['Z'] > (z - 0.15)) & (rand['Z'] < (z + 0.15)))]
+
+        cf = twoPointCFs.autocorr_cat(rpscales, qsoz, randz,
+                                      nthreads=16, estimator='LS', pimax=pimax, dpi=pibinsize, nbootstrap=500)
+        with open('results/cfs/z%s_cf.pickle' % z, 'wb') as f:
+            pickle.dump(cf, f)
+        fig = cf['2dplot']
+        fig.savefig(plotdir + 'z%s.pdf' % z)
+auto_eboss_z_evolution(np.logspace(0., 1.5, 11), pimax=30, pibinsize=3)
+
+def auto_boss_z_evolution(rpscales, pimax, pibinsize):
+    qso = Table.read(datadir + 'BOSS_QSO/BOSS_QSO.fits')
+    rand = Table.read(datadir + 'BOSS_QSO/BOSS_QSO_randoms.fits')
+
+    for z in boss_zs:
+        qsoz = qso[np.where((qso['Z'] > (z - 0.3)) & (qso['Z'] < (z + 0.3)))]
+        randz = rand[np.where((rand['Z'] > (z - 0.3)) & (rand['Z'] < (z + 0.3)))]
+
+        cf = twoPointCFs.autocorr_cat(rpscales, qsoz, randz,
+                                      nthreads=16, estimator='LS', pimax=pimax, dpi=pibinsize, nbootstrap=500)
+
+def qso_x_lrgs(rpscales, pimax, pibinsize):
+    qso = Table.read(datadir + 'eBOSS_QSO/eBOSS_QSO.fits')
+    qsorand = Table.read(datadir + 'eBOSS_QSO/eBOSS_QSO_randoms.fits')
+    lrg = Table.read(datadir + 'eBOSS_LRG/eBOSS_LRG.fits')
+    lrgrand = Table.read(datadir + 'eBOSS_LRG/eBOSS_LRG_randoms.fits')
+
+    # get only qsos, lrgs in overlap at z=0.8 to z=1.
+    qso = qso[np.where(qso['Z'] < 1.)]
+    qsorand = qsorand[np.where(qsorand['Z'] < 1.)]
+
+    lrg = lrg[np.where(lrg['Z'] > .8)]
+    lrgrand = lrgrand[np.where(lrgrand['Z'] > .8)]
+
+    lrgcf = twoPointCFs.autocorr_cat(rpscales, lrg, lrgrand,
+                                     nthreads=16, estimator='LS', pimax=pimax, dpi=pibinsize, nbootstrap=500)
+
+    qsolrgcf = twoPointCFs.crosscorr_cats(rpscales, lrg, qso, lrgrand,
+                                          nthreads=16, estimator='Peebles', pimax=pimax, dpi=pibinsize, nbootstrap=500)
 
 
-# convert 2D pair counts in pi and r_p into projected correlation function wp(r_p)
-def convert_cf_to_wp(xirppi, nrpbins, pimax, dpi=1.0):
+"""def auto_eboss_z_evolution(rpscales, pimax, pibinsize):
+    qso = Table.read(datadir + 'eBOSS_QSO/eBOSS_QSO.fits')
+    rand = Table.read(datadir + 'eBOSS_QSO/eBOSS_QSO_randoms.fits')
 
-	if dpi <= 0.0:
-		msg = 'Binsize along the line of sight (dpi) = {0}'\
-			  'must be positive'.format(dpi)
-		raise ValueError(msg)
+    for z in eboss_zs:
+        qsoz = qso[np.where((qso['Z'] > (z - 0.15)) & (qso['Z'] < (z + 0.15)))]
+        randz = rand[np.where((rand['Z'] > (z - 0.15)) & (rand['Z'] < (z + 0.15)))]
 
-	wp = np.empty(nrpbins)
-	npibins = len(xirppi) // nrpbins
-	if ((npibins * nrpbins) != len(xirppi)):
-		msg = 'Number of pi bins could not be calculated correctly.'\
-				'Expected to find that the total number of bins = {0} '\
-				'would be the product of the number of pi bins = {1} '\
-				'and the number of rp bins = {2}'.format(len(xirppi),
-													   npibins,
-													   nrpbins)
-		raise ValueError(msg)
-
-	# Check that dpi/pimax/npibins are consistent
-	# Preventing issue #96 (https://github.com/manodeep/Corrfunc/issues/96)
-	# where npibins would be calculated incorrectly, and the summation would
-	# be wrong.
-	if (dpi*npibins != pimax):
-		msg = 'Pimax = {0} should be equal to the product of '\
-				'npibins = {1} and dpi = {2}. Check your binning scheme.'\
-				.format(pimax, npibins, dpi)
-		raise ValueError(msg)
-
-	for i in range(nrpbins):
-		wp[i] = 2.0 * dpi * np.sum(xirppi[i * npibins:(i + 1) * npibins])
-
-	return wp
-
-
-# convert 2D pair counts in pi and r_p into projected correlation function wp(r_p)
-def convert_cf_to_xi_s(xi_s_mu, nsbins, nmubins, wedges=None):
-	from halotools.mock_observables import tpcf_multipole
-
-
-	xi_s_mu = np.reshape(xi_s_mu, (nsbins, nmubins))
-	mubinedges = np.linspace(0., 1., nmubins+1)
-
-	monopoles, quadrupoles = [], []
-
-	if wedges is None:
-		monopoles = tpcf_multipole(xi_s_mu, mu_bins=mubinedges, order=0)
-		quadrupoles = tpcf_multipole(xi_s_mu, mu_bins=mubinedges, order=2)
-	else:
-		wedgelength = int(nmubins / wedges)
-		for j in range(wedges):
-			wedgebinedges = mubinedges[(j*wedgelength):((j+1)*wedgelength+1)]
-			xi_s_mu_in_wedge = xi_s_mu[:, (j*wedgelength):((j+1)*wedgelength)]
-			monopoles.append(tpcf_multipole(xi_s_mu_in_wedge, mu_bins=wedgebinedges, order=0))
-			quadrupoles.append(tpcf_multipole(xi_s_mu_in_wedge, mu_bins=wedgebinedges, order=2))
-	return monopoles, quadrupoles
-
-
-	"""mubin_idx_step = int(nmubins / n_mu_int_bins)
-
-
-	delta_mu = 1. / mubin_idx_step
-
-	xis = []
-	for i in range(n_mu_int_bins):
-		print((i+1)*mubin_idx_step)
-		xi_in_mubin = xi_s_mu[:, i*mubin_idx_step:(i+1)*mubin_idx_step]
-		print(xi_in_mubin)
-		xis.append(1 / delta_mu * np.trapz(xi_in_mubin, dx=1./nmubins, axis=1))
-	return xis
-
-
-# can also calculate correlation function from normal arrays instead of Corrfunc dictionaries
-def convert_raw_counts_to_cf(ND1, ND2, NR1, NR2,
-							D1D2, D1R2, D2R1, R1R2,
-							estimator='LS'):
-	if 'LS' in estimator or 'Landy' in estimator:
-		fN1 = np.float(NR1) / np.float(ND1)
-		fN2 = np.float(NR2) / np.float(ND2)
-		cf = np.zeros(len(D1D2))
-		cf[:] = np.nan
-		cf = (fN1 * fN2 * D1D2 -
-					fN1 * D1R2 -
-					fN2 * D2R1 +
-					R1R2) / R1R2
-	elif estimator == 'Peebles':
-		fN1 = np.float(NR1) / np.float(ND1)
-
-		cf = np.zeros(len(D1D2))
-		cf[:] = np.nan
-		cf = (fN1 * D1D2) / D1R2 - 1
-	else:
-		return "Choose Estimator"
-	return cf
-
-# same as above but for numpy array counts instead of dictionaries
-def convert_raw_counts_to_wp(ND1, ND2, NR1, NR2,
-							D1D2, D1R2, D2R1, R1R2, nrpbins, pimax, dpi=1.0,
-							estimator='LS'):
-	xirppi = convert_counts_to_cf(ND1, ND2, NR1, NR2,
-								  D1D2, D1R2, D2R1, R1R2,
-								  estimator=estimator)
-	wp = np.empty(nrpbins)
-	npibins = len(xirppi) // nrpbins
-	for i in range(nrpbins):
-		wp[i] = 2.0 * dpi * np.sum(xirppi[i * npibins:(i + 1) * npibins])
-	return wp
-	"""
+        cf = twoPointCFs.autocorr_cat(rpscales, qsoz, randz,
+                                      nthreads=16, estimator='LS', pimax=pimax, dpi=pibinsize, nbootstrap=500)"""
