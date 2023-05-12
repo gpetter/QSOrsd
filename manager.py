@@ -65,3 +65,9 @@ def decide_nchunks(z):
     # only need to keep enough slabs to contain ~10x the number of quasars at redshift for
     # model Poisson noise to be subdominant
     # quick calculation shows 3 slabs is more than enough at all redshifts, set n_chunks=11
+
+def min_scale(maxz):
+    from colossus.cosmology import cosmology
+    cosmo = cosmology.setCosmology('planck18')
+    fibercollision = 62. / 206265.
+    return cosmo.comovingDistance(0, maxz) * fibercollision

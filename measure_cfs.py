@@ -1,16 +1,29 @@
 from corrfunc_helper import twoPointCFs, plots
 from astropy.table import Table
 import numpy as np
-import pickle
-eboss_zs = [1.1, 1.4, 1.7, 2.]
-boss_zs = [2.5, 3.0]
+import manager
+
 
 datadir = '/home/graysonpetter/ssd/Dartmouth/data/lss/'
 plotdir = '/home/graysonpetter/Dropbox/rsdplots/'
 
 lopercentile, hipercentile = 10, 90
 
-
+def all_clustering(rpscales, cat, randcat, pimax, dpi, s_scales, mubins, wedges, cat2=None):
+    if cat2 is None:
+        cf = twoPointCFs.autocorr_cat(rpscales, cat, randcat, nthreads=16, estimator='LS',
+                                      pimax=pimax, dpi=dpi, nbootstrap=500, plots=False)
+        cf_s_mu = twoPointCFs.autocorr_cat(s_scales, cat, randcat, nthreads=16, estimator='LS', mubins=mubins,
+                                           nbootstrap=500, wedges=wedges, plots=False)
+    else:
+        cf = twoPointCFs.crosscorr_cats(rpscales, cat, randcat, nthreads=16, estimator='LS',
+                                      pimax=pimax, dpi=dpi, nbootstrap=500, plots=False)
+        cf_s_mu = twoPointCFs.crosscorr_cats(s_scales, cat, cat2, randcat, nthreads=16, estimator='LS', mubins=mubins,
+                                           nbootstrap=500, wedges=wedges, plots=False)
+    keylist = ['s', 's_bins', 'mono', 'quad', 'mono_err', 'quad_err']
+    for thiskey in keylist:
+        cf[thiskey] = cf_s_mu[thiskey]
+    return cf
 
 def rolling_percentile_selection(cat, prop, minpercentile, maxpercentile=100, nzbins=100):
     """
@@ -29,60 +42,65 @@ def rolling_percentile_selection(cat, prop, minpercentile, maxpercentile=100, nz
     newcat = cat[np.array(idxs)]
     return newcat
 
-def auto_all_eboss(rpscales, pimax, pibinsize, mbh_xcorr=False, lum_xcorr=False):
-    qso = Table.read(datadir + 'eBOSS_QSO/eBOSS_QSO.fits')
-    rand = Table.read(datadir + 'eBOSS_QSO/eBOSS_QSO_randoms.fits')
+def measure_all_cfs(rpmax, nrp, pimax, pibinsize, eboss=True, mbh_xcorr=False, lum_xcorr=False):
+    if eboss:
+        qso = Table.read(datadir + 'eBOSS_QSO/eBOSS_QSO.fits')
+        rand = Table.read(datadir + 'eBOSS_QSO/eBOSS_QSO_randoms.fits')
+        dz = 0.15
+        zlist = [1.1, 1.4, 1.7, 2.]
+    else:
+        qso = Table.read(datadir + 'BOSS_QSO/BOSS_QSO.fits')
+        rand = Table.read(datadir + 'BOSS_QSO/BOSS_QSO_randoms.fits')
+        dz = 0.3
+        zlist = [2.5, 3.1]
 
-    cf = twoPointCFs.autocorr_cat(rpscales, qso, rand,
-                                  nthreads=16, estimator='LS', pimax=pimax, dpi=pibinsize, nbootstrap=500)
-    with open('results/cfs/ebossqso_cf.pickle', 'wb') as f:
-        pickle.dump(cf, f)
-    fig = cf['2dplot']
-    fig.savefig(plotdir + 'all.pdf')
+    for z in zlist:
+        qsoz = qso[np.where((qso['Z'] > (z - dz)) * (qso['Z'] <= (z + dz)))]
+        randz = rand[np.where((rand['Z'] > (z - dz)) * (rand['Z'] <= (z + dz)))]
+        # avoid fiber collision limit
+        minrp = manager.min_scale(np.max(qsoz['Z']))
+        rpscales = np.logspace(np.log10(minrp), np.log10(rpmax), nrp+1)
 
-    if mbh_xcorr:
-        highbh = rolling_percentile_selection(qso, 'MBH', minpercentile=hipercentile, nzbins=30)
-        lobh = rolling_percentile_selection(qso, 'MBH', minpercentile=0, maxpercentile=lopercentile, nzbins=30)
-        hicf = twoPointCFs.crosscorr_cats(rpscales, qso, highbh, rand,
-                                          nthreads=16, estimator='Peebles',
-                                          pimax=pimax, dpi=pibinsize, nbootstrap=500)
-        locf = twoPointCFs.crosscorr_cats(rpscales, qso, lobh, rand,
-                                          nthreads=16, estimator='Peebles',
-                                          pimax=pimax, dpi=pibinsize, nbootstrap=500)
-        with open('results/cfs/ebossqso_highbh.pickle', 'wb') as f:
-            pickle.dump(hicf, f)
-        with open('results/cfs/ebossqso_lobh.pickle', 'wb') as f:
-            pickle.dump(locf, f)
-        fig = plots.plotmultiple_2d_corr_func([cf['xi_rp_pi'], hicf['xi_rp_pi']])
-        fig.savefig(plotdir + 'all_hibhmass.pdf')
-        fig = plots.plotmultiple_2d_corr_func([cf['xi_rp_pi'], locf['xi_rp_pi']])
-        fig.savefig(plotdir + 'all_lobhmass.pdf')
-    if lum_xcorr:
-        highlum = rolling_percentile_selection(qso, 'Lbol', minpercentile=hipercentile, nzbins=30)
-        lolum = rolling_percentile_selection(qso, 'Lbol', minpercentile=0, maxpercentile=lopercentile, nzbins=30)
-        hilumcf = twoPointCFs.crosscorr_cats(rpscales, qso, highlum, rand,
-                                          nthreads=16, estimator='Peebles',
-                                          pimax=pimax, dpi=pibinsize, nbootstrap=500)
-        lolumcf = twoPointCFs.crosscorr_cats(rpscales, qso, lolum, rand,
-                                          nthreads=16, estimator='Peebles',
-                                          pimax=pimax, dpi=pibinsize, nbootstrap=500)
-        with open('results/cfs/ebossqso_highbh.pickle', 'wb') as f:
-            pickle.dump(hilumcf, f)
-        with open('results/cfs/ebossqso_lobh.pickle', 'wb') as f:
-            pickle.dump(lolumcf, f)
-        fig = plots.plotmultiple_2d_corr_func([cf['xi_rp_pi'], hilumcf['xi_rp_pi']])
-        fig.savefig(plotdir + 'all_hilum.pdf')
-        fig = plots.plotmultiple_2d_corr_func([cf['xi_rp_pi'], lolumcf['xi_rp_pi']])
-        fig.savefig(plotdir + 'all_lolum.pdf')
+        cf = twoPointCFs.autocorr_cat(rpscales, qsoz, randz,
+                                      nthreads=16, estimator='LS', pimax=pimax, dpi=pibinsize, nbootstrap=500)
+        fig = cf.pop('2dplot')
+        fig.savefig(plotdir + 'z%s.pdf' % z)
+        cf.pop('plot')
+        manager.write_pickle('results/cfs/%s_cf' % z, cf)
 
-#auto_all_eboss(np.logspace(0., 1.5, 11), pimax=30, pibinsize=3, mbh_xcorr=True, lum_xcorr=True)
+        if mbh_xcorr:
+            highbh = rolling_percentile_selection(qsoz, 'MBH', minpercentile=hipercentile, nzbins=30)
+            lobh = rolling_percentile_selection(qsoz, 'MBH', minpercentile=0, maxpercentile=lopercentile, nzbins=30)
+            hicf = twoPointCFs.crosscorr_cats(rpscales, qsoz, highbh, randz,
+                                              nthreads=16, estimator='Peebles',
+                                              pimax=pimax, dpi=pibinsize, nbootstrap=500)
+            locf = twoPointCFs.crosscorr_cats(rpscales, qsoz, lobh, randz,
+                                              nthreads=16, estimator='Peebles',
+                                              pimax=pimax, dpi=pibinsize, nbootstrap=500)
+            fig = plots.plotmultiple_2d_corr_func([locf['xi_rp_pi'], hicf['xi_rp_pi']])
+            fig.savefig(plotdir + 'z%s_bh.pdf' % z)
+            locf.pop('2dplot'), locf.pop('plot'), hicf.pop('2dplot'), hicf.pop('plot')
 
-def auto_all_boss(rpscales, pimax, pibinsize):
-    qso = Table.read(datadir + 'BOSS_QSO/BOSS_QSO.fits')
-    rand = Table.read(datadir + 'BOSS_QSO/BOSS_QSO_randoms.fits')
+            manager.write_pickle('results/cfs/%s_lobh_cf' % z, locf)
+            manager.write_pickle('results/cfs/%s_hibh_cf' % z, hicf)
+        if lum_xcorr:
+            hilum = rolling_percentile_selection(qsoz, 'Lbol', minpercentile=hipercentile, nzbins=30)
+            lolum = rolling_percentile_selection(qsoz, 'Lbol', minpercentile=0, maxpercentile=lopercentile, nzbins=30)
+            hicf = twoPointCFs.crosscorr_cats(rpscales, qsoz, hilum, randz,
+                                              nthreads=16, estimator='Peebles',
+                                              pimax=pimax, dpi=pibinsize, nbootstrap=500)
+            locf = twoPointCFs.crosscorr_cats(rpscales, qsoz, lolum, randz,
+                                              nthreads=16, estimator='Peebles',
+                                              pimax=pimax, dpi=pibinsize, nbootstrap=500)
+            fig = plots.plotmultiple_2d_corr_func([locf['xi_rp_pi'], hicf['xi_rp_pi']])
+            fig.savefig(plotdir + 'z%s_lum.pdf' % z)
+            locf.pop('2dplot'), locf.pop('plot'), hicf.pop('2dplot'), hicf.pop('plot')
 
-    cf = twoPointCFs.autocorr_cat(rpscales, qso, rand,
-                                  nthreads=16, estimator='LS', pimax=pimax, dpi=pibinsize, nbootstrap=500)
+            manager.write_pickle('results/cfs/%s_lolum_cf' % z, locf)
+            manager.write_pickle('results/cfs/%s_hilum_cf' % z, hicf)
+
+measure_all_cfs(rpmax=25., nrp=5, pimax=25, pibinsize=5, eboss=True, mbh_xcorr=True, lum_xcorr=True)
+
 
 
 
