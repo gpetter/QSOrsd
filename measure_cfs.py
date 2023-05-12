@@ -16,10 +16,10 @@ def all_clustering(rpscales, cat, randcat, pimax, dpi, s_scales, mubins, wedges,
         cf_s_mu = twoPointCFs.autocorr_cat(s_scales, cat, randcat, nthreads=16, estimator='LS', mubins=mubins,
                                            nbootstrap=500, wedges=wedges)
     else:
-        cf = twoPointCFs.crosscorr_cats(rpscales, cat, cat2, randcat, nthreads=16, estimator='LS',
+        cf = twoPointCFs.crosscorr_cats(rpscales, cat, cat2, randcat, nthreads=16, estimator='Peebles',
                                       pimax=pimax, dpi=dpi, nbootstrap=500)
-        cf_s_mu = twoPointCFs.crosscorr_cats(s_scales, cat, cat2, randcat, nthreads=16, estimator='LS', mubins=mubins,
-                                           nbootstrap=500, wedges=wedges)
+        cf_s_mu = twoPointCFs.crosscorr_cats(s_scales, cat, cat2, randcat, nthreads=16, estimator='Peebles',
+                                        mubins=mubins, nbootstrap=500, wedges=wedges)
 
     cf.pop('plot')
     keylist = ['s', 's_bins', 'mono', 'quad', 'mono_err', 'quad_err']
@@ -72,36 +72,30 @@ def measure_all_cfs(rpmax, nrp, pimax, pibinsize, s_scales, mubins, wedges, ebos
         if mbh_xcorr:
             highbh = rolling_percentile_selection(qsoz, 'MBH', minpercentile=hipercentile, nzbins=30)
             lobh = rolling_percentile_selection(qsoz, 'MBH', minpercentile=0, maxpercentile=lopercentile, nzbins=30)
-            hicf = twoPointCFs.crosscorr_cats(rpscales, qsoz, highbh, randz,
-                                              nthreads=16, estimator='Peebles',
-                                              pimax=pimax, dpi=pibinsize, nbootstrap=500)
-            locf = twoPointCFs.crosscorr_cats(rpscales, qsoz, lobh, randz,
-                                              nthreads=16, estimator='Peebles',
-                                              pimax=pimax, dpi=pibinsize, nbootstrap=500)
+            hicf, foo = all_clustering(rpscales=rpscales, cat=qsoz, randcat=randz, pimax=pimax, dpi=pibinsize,
+                                 s_scales=s_scales, mubins=mubins, wedges=wedges, cat2=highbh)
+            locf, foo = all_clustering(rpscales=rpscales, cat=qsoz, randcat=randz, pimax=pimax, dpi=pibinsize,
+                                       s_scales=s_scales, mubins=mubins, wedges=wedges, cat2=lobh)
             fig = plots.plotmultiple_2d_corr_func([locf['xi_rp_pi'], hicf['xi_rp_pi']])
             fig.savefig(plotdir + 'z%s_bh.pdf' % z)
-            locf.pop('2dplot'), locf.pop('plot'), hicf.pop('2dplot'), hicf.pop('plot')
 
             manager.write_pickle('results/cfs/%s_lobh_cf' % z, locf)
             manager.write_pickle('results/cfs/%s_hibh_cf' % z, hicf)
         if lum_xcorr:
-            hilum = rolling_percentile_selection(qsoz, 'Lbol', minpercentile=hipercentile, nzbins=30)
+            highlum = rolling_percentile_selection(qsoz, 'Lbol', minpercentile=hipercentile, nzbins=30)
             lolum = rolling_percentile_selection(qsoz, 'Lbol', minpercentile=0, maxpercentile=lopercentile, nzbins=30)
-            hicf = twoPointCFs.crosscorr_cats(rpscales, qsoz, hilum, randz,
-                                              nthreads=16, estimator='Peebles',
-                                              pimax=pimax, dpi=pibinsize, nbootstrap=500)
-            locf = twoPointCFs.crosscorr_cats(rpscales, qsoz, lolum, randz,
-                                              nthreads=16, estimator='Peebles',
-                                              pimax=pimax, dpi=pibinsize, nbootstrap=500)
+            hicf, foo = all_clustering(rpscales=rpscales, cat=qsoz, randcat=randz, pimax=pimax, dpi=pibinsize,
+                                       s_scales=s_scales, mubins=mubins, wedges=wedges, cat2=highlum)
+            locf, foo = all_clustering(rpscales=rpscales, cat=qsoz, randcat=randz, pimax=pimax, dpi=pibinsize,
+                                       s_scales=s_scales, mubins=mubins, wedges=wedges, cat2=lolum)
             fig = plots.plotmultiple_2d_corr_func([locf['xi_rp_pi'], hicf['xi_rp_pi']])
             fig.savefig(plotdir + 'z%s_lum.pdf' % z)
-            locf.pop('2dplot'), locf.pop('plot'), hicf.pop('2dplot'), hicf.pop('plot')
 
             manager.write_pickle('results/cfs/%s_lolum_cf' % z, locf)
             manager.write_pickle('results/cfs/%s_hilum_cf' % z, hicf)
 
-measure_all_cfs(rpmax=25., nrp=5, pimax=25, pibinsize=5, s_scales=np.logspace(0., 1.4, 20), mubins=20, wedges=5,
-                eboss=True, mbh_xcorr=False, lum_xcorr=False)
+measure_all_cfs(rpmax=25., nrp=10, pimax=30, pibinsize=3, s_scales=np.logspace(0., 1.4, 15), mubins=20, wedges=5,
+                eboss=True, mbh_xcorr=True, lum_xcorr=True)
 
 
 
