@@ -24,18 +24,7 @@ else:
 eboss_zs = [1.1, 1.4, 1.7, 2.]
 boss_zs = [2.5, 3.1]
 
-def decide_nchunks(z):
-    from colossus.cosmology import cosmology
-    from colossus.lss import mass_function
-    mmin = 12.2
-    masses = np.logspace(mmin, 16, 100)
-    cosmology.setCosmology('planck18')
-    mfunc_so = mass_function.massFunction(masses, z, mdef='200c', model='tinker08', q_out='dndlnM')
-    # number of halos more massive than Mmin in the simulation box
-    nhalos = (2000 ** 3) * np.trapz(mfunc_so, x=np.log(masses))
-    # only need to keep enough slabs to contain ~10x the number of quasars at redshift for
-    # model Poisson noise to be subdominant
-    # quick calculation shows 3 slabs is more than enough at all redshifts, set n_chunks=11
+
 n_chunks = 11
 
 
