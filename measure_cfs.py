@@ -12,18 +12,21 @@ lopercentile, hipercentile = 10, 90
 def all_clustering(rpscales, cat, randcat, pimax, dpi, s_scales, mubins, wedges, cat2=None):
     if cat2 is None:
         cf = twoPointCFs.autocorr_cat(rpscales, cat, randcat, nthreads=16, estimator='LS',
-                                      pimax=pimax, dpi=dpi, nbootstrap=500, plots=False)
+                                      pimax=pimax, dpi=dpi, nbootstrap=500)
         cf_s_mu = twoPointCFs.autocorr_cat(s_scales, cat, randcat, nthreads=16, estimator='LS', mubins=mubins,
-                                           nbootstrap=500, wedges=wedges, plots=False)
+                                           nbootstrap=500, wedges=wedges)
     else:
-        cf = twoPointCFs.crosscorr_cats(rpscales, cat, randcat, nthreads=16, estimator='LS',
-                                      pimax=pimax, dpi=dpi, nbootstrap=500, plots=False)
+        cf = twoPointCFs.crosscorr_cats(rpscales, cat, cat2, randcat, nthreads=16, estimator='LS',
+                                      pimax=pimax, dpi=dpi, nbootstrap=500)
         cf_s_mu = twoPointCFs.crosscorr_cats(s_scales, cat, cat2, randcat, nthreads=16, estimator='LS', mubins=mubins,
-                                           nbootstrap=500, wedges=wedges, plots=False)
+                                           nbootstrap=500, wedges=wedges)
+
+    cf.pop('plot')
     keylist = ['s', 's_bins', 'mono', 'quad', 'mono_err', 'quad_err']
     for thiskey in keylist:
         cf[thiskey] = cf_s_mu[thiskey]
-    return cf
+    fig = cf.pop('2dplot')
+    return cf, fig
 
 def rolling_percentile_selection(cat, prop, minpercentile, maxpercentile=100, nzbins=100):
     """
@@ -42,7 +45,7 @@ def rolling_percentile_selection(cat, prop, minpercentile, maxpercentile=100, nz
     newcat = cat[np.array(idxs)]
     return newcat
 
-def measure_all_cfs(rpmax, nrp, pimax, pibinsize, eboss=True, mbh_xcorr=False, lum_xcorr=False):
+def measure_all_cfs(rpmax, nrp, pimax, pibinsize, s_scales, mubins, wedges, eboss=True, mbh_xcorr=False, lum_xcorr=False):
     if eboss:
         qso = Table.read(datadir + 'eBOSS_QSO/eBOSS_QSO.fits')
         rand = Table.read(datadir + 'eBOSS_QSO/eBOSS_QSO_randoms.fits')
@@ -61,11 +64,9 @@ def measure_all_cfs(rpmax, nrp, pimax, pibinsize, eboss=True, mbh_xcorr=False, l
         minrp = manager.min_scale(np.max(qsoz['Z']))
         rpscales = np.logspace(np.log10(minrp), np.log10(rpmax), nrp+1)
 
-        cf = twoPointCFs.autocorr_cat(rpscales, qsoz, randz,
-                                      nthreads=16, estimator='LS', pimax=pimax, dpi=pibinsize, nbootstrap=500)
-        fig = cf.pop('2dplot')
+        cf, fig = all_clustering(rpscales=rpscales, cat=qsoz, randcat=randz, pimax=pimax, dpi=pibinsize,
+                                 s_scales=s_scales, mubins=mubins, wedges=wedges)
         fig.savefig(plotdir + 'z%s.pdf' % z)
-        cf.pop('plot')
         manager.write_pickle('results/cfs/%s_cf' % z, cf)
 
         if mbh_xcorr:
@@ -99,7 +100,8 @@ def measure_all_cfs(rpmax, nrp, pimax, pibinsize, eboss=True, mbh_xcorr=False, l
             manager.write_pickle('results/cfs/%s_lolum_cf' % z, locf)
             manager.write_pickle('results/cfs/%s_hilum_cf' % z, hicf)
 
-measure_all_cfs(rpmax=25., nrp=5, pimax=25, pibinsize=5, eboss=True, mbh_xcorr=True, lum_xcorr=True)
+measure_all_cfs(rpmax=25., nrp=5, pimax=25, pibinsize=5, s_scales=np.logspace(0., 1.4, 20), mubins=20, wedges=5,
+                eboss=True, mbh_xcorr=False, lum_xcorr=False)
 
 
 
