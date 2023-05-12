@@ -84,32 +84,7 @@ def auto_all_boss(rpscales, pimax, pibinsize):
     cf = twoPointCFs.autocorr_cat(rpscales, qso, rand,
                                   nthreads=16, estimator='LS', pimax=pimax, dpi=pibinsize, nbootstrap=500)
 
-def auto_eboss_z_evolution(rpscales, pimax, pibinsize):
-    qso = Table.read(datadir + 'eBOSS_QSO/eBOSS_QSO.fits')
-    rand = Table.read(datadir + 'eBOSS_QSO/eBOSS_QSO_randoms.fits')
 
-    for z in eboss_zs:
-        qsoz = qso[np.where((qso['Z'] > (z - 0.15)) & (qso['Z'] < (z + 0.15)))]
-        randz = rand[np.where((rand['Z'] > (z - 0.15)) & (rand['Z'] < (z + 0.15)))]
-
-        cf = twoPointCFs.autocorr_cat(rpscales, qsoz, randz,
-                                      nthreads=16, estimator='LS', pimax=pimax, dpi=pibinsize, nbootstrap=500)
-        with open('results/cfs/z%s_cf.pickle' % z, 'wb') as f:
-            pickle.dump(cf, f)
-        fig = cf['2dplot']
-        fig.savefig(plotdir + 'z%s.pdf' % z)
-auto_eboss_z_evolution(np.logspace(0., 1.5, 11), pimax=30, pibinsize=3)
-
-def auto_boss_z_evolution(rpscales, pimax, pibinsize):
-    qso = Table.read(datadir + 'BOSS_QSO/BOSS_QSO.fits')
-    rand = Table.read(datadir + 'BOSS_QSO/BOSS_QSO_randoms.fits')
-
-    for z in boss_zs:
-        qsoz = qso[np.where((qso['Z'] > (z - 0.3)) & (qso['Z'] < (z + 0.3)))]
-        randz = rand[np.where((rand['Z'] > (z - 0.3)) & (rand['Z'] < (z + 0.3)))]
-
-        cf = twoPointCFs.autocorr_cat(rpscales, qsoz, randz,
-                                      nthreads=16, estimator='LS', pimax=pimax, dpi=pibinsize, nbootstrap=500)
 
 def qso_x_lrgs(rpscales, pimax, pibinsize):
     qso = Table.read(datadir + 'eBOSS_QSO/eBOSS_QSO.fits')
@@ -131,13 +106,3 @@ def qso_x_lrgs(rpscales, pimax, pibinsize):
                                           nthreads=16, estimator='Peebles', pimax=pimax, dpi=pibinsize, nbootstrap=500)
 
 
-"""def auto_eboss_z_evolution(rpscales, pimax, pibinsize):
-    qso = Table.read(datadir + 'eBOSS_QSO/eBOSS_QSO.fits')
-    rand = Table.read(datadir + 'eBOSS_QSO/eBOSS_QSO_randoms.fits')
-
-    for z in eboss_zs:
-        qsoz = qso[np.where((qso['Z'] > (z - 0.15)) & (qso['Z'] < (z + 0.15)))]
-        randz = rand[np.where((rand['Z'] > (z - 0.15)) & (rand['Z'] < (z + 0.15)))]
-
-        cf = twoPointCFs.autocorr_cat(rpscales, qsoz, randz,
-                                      nthreads=16, estimator='LS', pimax=pimax, dpi=pibinsize, nbootstrap=500)"""
