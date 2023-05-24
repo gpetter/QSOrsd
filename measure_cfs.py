@@ -95,7 +95,7 @@ def measure_all_cfs(rpmax, nrp, pimax, pibinsize, s_scales, mubins, wedges, ebos
             manager.write_pickle('results/cfs/%s_hilum_cf' % z, hicf)
 
 measure_all_cfs(rpmax=25., nrp=10, pimax=30, pibinsize=3, s_scales=np.logspace(0., 1.4, 15), mubins=20, wedges=5,
-                eboss=True, mbh_xcorr=True, lum_xcorr=True)
+                eboss=False, mbh_xcorr=True, lum_xcorr=True)
 
 
 

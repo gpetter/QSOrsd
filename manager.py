@@ -35,7 +35,7 @@ def reset_params(ball):
     ball.tracers['QSO']['Bsat'] = 0.
     return ball
 
-def load_sim(z, cent_only, sat_only, nslabs=34, small=False,):
+def load_sim(z, cent_only, sat_only, nslabs=34, small=False, z_errs=None):
     sim_params['sim_name'] = 'AbacusSummit_base_c000_ph000'
     if small:
         sim_params['sim_name'] = 'AbacusSummit_small_c000_ph3000'
@@ -48,7 +48,9 @@ def load_sim(z, cent_only, sat_only, nslabs=34, small=False,):
         sim_params['subsample_dir'] = '/home/graysonpetter/extssd/subsample_default/'
 
     n_chunks = floor(34/nslabs)
-    ball = AbacusHOD(sim_params, HOD_params, clustering_params, chunk=0, n_chunks=n_chunks, delta_z_dist=qsoz['sigZ'])
+    ball = AbacusHOD(sim_params, HOD_params, clustering_params, chunk=0, n_chunks=n_chunks, delta_z_dist=z_errs)
+    ball = reset_params(ball)
+    return ball
 
 
 
